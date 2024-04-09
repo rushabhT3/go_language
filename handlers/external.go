@@ -1,35 +1,44 @@
-// handlers/external.go
 package handlers
 
 import (
-	"io"
 	"net/http"
+
+	db "my_gin_project/db"
+	"my_gin_project/models"
 
 	"github.com/gin-gonic/gin"
 )
 
+// ExternalHandler handles the "/external" route
 func ExternalHandler(c *gin.Context) {
-	// Make a GET request to the external API
-	resp, err := http.Get("https://crudcrud.com/api/d7b51435183d4369aeac85a3c2218642")
+	// Connect to the database
+	dbConn, err := db.Connect()
 	if err != nil {
-		// If there's an error, return a 500 status and an error message
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to make GET request",
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to connect to database"})
 		return
 	}
-	defer resp.Body.Close()
+	defer dbConn.Close()
 
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
+	// Query the database for all users
+	rows, err := dbConn.Query("SELECT * FROM users")
 	if err != nil {
-		// If there's an error, return a 500 status and an error message
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to read response body",
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query database"})
 		return
 	}
+	defer rows.Close()
 
-	// Send the response body as the response
-	c.String(http.StatusOK, string(body))
+	// Scan the rows into a slice of User structs
+	var users []models.User
+	for rows.Next() {
+		var user models.User
+		err = rows.Scan(&user.ID, &user.FirstName, &user.LastName, &user.Email, &user.CreatedAt)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan row"})
+			return
+		}
+		users = append(users, user)
+	}
+
+	// Return the users as JSON
+	c.JSON(http.StatusOK, users)
 }
